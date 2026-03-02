@@ -1,0 +1,319 @@
+GLRenderer.h
+// --- KAMERA (Tvoj kod) ---
+void calculateView(int x, int y,double radius); // Azurira eyex, eyey, eyez
+double eyex, eyey, eyez;
+double centerx, centery, centerz;
+double upx, upy, upz;
+double rWorld;   // Poluprecnik kamere
+double trenX, trenY; // Uglovi rotacije kamere
+
+protected:
+	HGLRC	 m_hrc; //OpenGL Rendering Context 
+
+	// ID-jevi tekstura
+	UINT imeTex;
+
+GLRenderer.cpp
+
+//KONSTRUKTOR
+CGLRenderer::CGLRenderer(void)
+{
+	// Inicijalizacija kamere (iz tvog zahteva)
+	rWorld = 20.0; // Pocetna udaljenost (po zadatku max 50, min 8)
+	trenX = 0;
+	trenY = 0;
+
+	centerx = 0; centery = 10; centerz = 0; // Gledamo u centar (malo podignuto jer je pauk na podu)
+	upx = 0; upy = 1; upz = 0;
+
+	calculateView(0, 0, 0); // Izracunaj pocetno eyex, eyey, eyez
+}
+void CGLRenderer::PrepareScene(CDC *pDC)
+{
+	wglMakeCurrent(pDC->m_hDC, m_hrc);
+	//---------------------------------
+	glClearColor(1.0, 1.0, 1.0,1.0);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_TEXTURE_2D);
+
+	glEnable(GL_LIGHTING);
+	float ambijentalno_svetlo[] = { 0.5f,0.5f,0.5,1.0f };
+	float belo_svetlo[] = { 1.0f,1.0f,1.0f,1.0f };
+
+	glEnable(GL_LIGHT0);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambijentalno_svetlo);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, belo_svetlo);
+	glLightfv(GL_LIGHT0, GL_SPECULAR, belo_svetlo);
+
+	// --- SVETLO 1 (ono koje je fiksirano u svetu) ---
+	glEnable(GL_LIGHT1);
+	glLightfv(GL_LIGHT1, GL_AMBIENT, ambijentalno_svetlo);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, belo_svetlo);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, belo_svetlo);
+
+	// --- GLOBALNO AMBIJENTALNO OSVETLJENJE ---
+	float globalno_ambijentalno[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalno_ambijentalno);
+
+	imeTex = LoadTexture("ime.jpg");
+	//---------------------------------
+	wglMakeCurrent(NULL, NULL);
+}
+void CGLRenderer::DrawScene(CDC *pDC)
+{
+	wglMakeCurrent(pDC->m_hDC, m_hrc);
+	//---------------------------------
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glLoadIdentity();
+
+	float pozicija_svetlo0[] = { 0.0f, 0.0f, 1.0f, 0.0f };
+	glLightfv(GL_LIGHT0, GL_POSITION, pozicija_svetlo0);
+	
+	//ako zelimo da nas svetlo prati iza kamere, onda se glLightfv() poziva PRE 	//gluLookAt(), ako ne zelimo, onda tek posle poziva gluLookAt()
+
+	//u niz za poziciju izvora svetla 4. argument moze biti 0.0 (direkciono, beskonacno 	//svetlo) ili 1.0 (kao svetlo u sobi na plafonu npr) ako zelimo da menjamo intezitet 	//svetla u skladu sa udaljenoscu od objekta, treba da se to promeni rucno pomocu 	//jedne funkcije i menja se attenuation
+	
+	gluLookAt(eyex, eyey, eyez, centerx, centery, centerz, upx, upy, upz);
+
+	float pozicija_svetlo1[] = { 0.0f, 1.0f, 1.0f, 0.0f };
+	glLightfv(GL_LIGHT1, GL_POSITION, pozicija_svetlo1);
+
+	//uglavnom
+	//glDisable(GL_TEXTURE_2D);
+	//DrawAxes();
+	//glEnable(GL_TEXTURE_2D);
+
+	glFlush();
+	SwapBuffers(pDC->m_hDC);
+	//---------------------------------
+	wglMakeCurrent(NULL, NULL);
+}
+void CGLRenderer::Reshape(CDC *pDC, int w, int h)
+{
+	wglMakeCurrent(pDC->m_hDC, m_hrc);
+	//---------------------------------
+	glViewport(0, 0, (GLsizei)w, (GLsizei)h);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	
+	gluPerspective(50.0, (double)w / double(h), 1.0, 200.0);
+	glMatrixMode(GL_MODELVIEW);
+	//---------------------------------
+	wglMakeCurrent(NULL, NULL);
+}
+void CGLRenderer::DestroyScene(CDC *pDC)
+{
+	wglMakeCurrent(pDC->m_hDC, m_hrc);
+	// ...
+	//brisanje tekstura
+	glDeleteTextures(1, &imeTex);
+	wglMakeCurrent(NULL,NULL); 
+	if(m_hrc) 
+	{
+		wglDeleteContext(m_hrc);
+		m_hrc = NULL;
+	}
+}
+void CGLRenderer::calculateView(int x, int y,double radius)
+{
+	double stariTrenX = trenX;
+	trenY += x * 0.5; // Osetljivost misa, moze sa *0.5 i ne mora
+	trenX += y * 0.5;
+	rWorld += radius;
+
+	// Ogranicavanje ugla gledanja da se ne prevrne kamera
+	if (trenX > 90) trenX = 90;
+	if (trenX < -90) trenX = -90;
+	if (rWorld < 8.0) rWorld = 8.0;
+	if (rWorld > 50.0) rWorld = 50.0;
+
+	double ugaoX = trenX * 3.1415 / 180; // Elevation (gore-dole)
+	double ugaoY = trenY * 3.1415 / 180; // Azimuth (levo-desno)
+
+	eyey = centery + rWorld * sin(ugaoX);
+	if (eyey < 0.5)
+	{
+		trenX = stariTrenX;
+		ugaoX = trenX * 3.1415 / 180; // Preracunavamo radijane
+		eyey = centery + rWorld * sin(ugaoX);
+	}
+	eyex = centerx + rWorld * cos(ugaoX) * cos(ugaoY); // Dodao sam centerx da rotira OKO centra
+	eyez = centerz + rWorld * cos(ugaoX) * sin(ugaoY);
+	
+}
+UINT CGLRenderer::LoadTexture(char* fileName)
+{
+	UINT texID;
+	DImage img;
+	
+	// 1. Ucitavanje slike sa diska u RAM
+	img.Load(CString(fileName)); 
+
+	// 2. Poravnanje memorije i generisanje ID-a
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glGenTextures(1, &texID);
+	
+	// 3. Aktiviranje te teksture
+	glBindTexture(GL_TEXTURE_2D, texID);
+
+	// 4. Podesavanje parametara (Wrap i Filteri)
+	// Koristimo GL_CLAMP za okruzenje (Skybox) da se ivice ne bi videle
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	
+	// Nacin mesanja boja: GL_MODULATE znaci mnozenje sa svetlom/bojom
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// 5. Prebacivanje u VRAM i pravljenje Mipmapa
+	gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGBA, img.Width(), img.Height(), GL_BGRA_EXT, GL_UNSIGNED_BYTE, img.GetDIBBits());
+
+	// 6. Vracamo ID koji je dodeljen ovoj teksturi
+	return texID;
+}
+View.h
+// Overrides
+virtual void OnInitialUpdate();
+
+CGLRenderer m_glRenderer;
+CPoint pos = { 0,0 };
+bool rot = false;
+
+View.cpp
+ON_WM_MOUSEMOVE()
+ON_WM_CREATE()
+ON_WM_SIZE()
+ON_WM_DESTROY()
+ON_WM_ERASEBKGND()
+ON_WM_LBUTTONDOWN()
+ON_WM_LBUTTONUP()
+ON_WM_KEYDOWN()
+ON_WM_MOUSEWHEEL()
+void CKolokvijumII2020View::OnDraw(CDC* pDC)
+{
+	CKolokvijumII2020Doc* pDoc = GetDocument();
+	ASSERT_VALID(pDoc);
+	if (!pDoc)
+		return;
+	m_glRenderer.DrawScene(pDC);
+	
+	// TODO: add draw code for native data here
+}
+void CKolokvijumII2020View::OnLButtonDown(UINT nFlags, CPoint point)
+{
+	// TODO: Add your message handler code here and/or call default
+	rot = true;
+	pos.x = point.x;
+	pos.y = point.y;
+	CView::OnLButtonDown(nFlags, point);
+}
+
+void CKolokvijumII2020View::OnLButtonUp(UINT nFlags, CPoint point)
+{
+	// TODO: Add your message handler code here and/or call default
+	rot = false;
+	CView::OnLButtonUp(nFlags, point);
+}
+void CKolokvijumII2020View::OnMouseMove(UINT nFlags, CPoint point)
+{
+	// TODO: Add your message handler code here and/or call default
+	if (rot) // Pretpostavljam da imas 'rot' bool flag i 'pos' CPoint iz prethodnog primera
+	{
+		int deltaX = point.x - pos.x;
+		int deltaY = point.y - pos.y;
+
+		m_glRenderer.calculateView(deltaX, deltaY, 0);
+		Invalidate();
+		pos.x = point.x;
+		pos.y = point.y;
+	}
+	CView::OnMouseMove(nFlags, point);
+}
+BOOL CGLKView::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
+{
+	// TODO: Add your message handler code here and/or call default
+	if (zDelta > 0)
+		m_glRenderer.calculateView(0, 0, -5.0);
+	else
+		m_glRenderer.calculateView(0, 0, 5.0);
+	Invalidate();
+	return CView::OnMouseWheel(nFlags, zDelta, pt);
+}
+int CKolokvijumII2020View::OnCreate(LPCREATESTRUCT lpCreateStruct)
+{
+	if (CView::OnCreate(lpCreateStruct) == -1)
+		return -1;
+
+	// TODO:  Add your specialized creation code here
+	CDC* pDC = GetDC();
+	m_glRenderer.CreateGLContext(pDC); // Pravi OpenGL kontekst
+	ReleaseDC(pDC);
+	return 0;
+}
+void CKolokvijumII2020View::OnSize(UINT nType, int cx, int cy)
+{
+	CView::OnSize(nType, cx, cy);
+
+	// TODO: Add your message handler code here
+	CDC* pDC = GetDC();
+	m_glRenderer.Reshape(pDC, cx, cy); // Zove tvoj Reshape iz Renderera
+	ReleaseDC(pDC);
+}
+void CKolokvijumII2020View::OnDestroy()
+{
+	CView::OnDestroy();
+
+	// TODO: Add your message handler code here
+	CDC* pDC = GetDC();
+	m_glRenderer.DestroyScene(pDC);
+	ReleaseDC(pDC);
+}
+
+BOOL CKolokvijumII2020View::OnEraseBkgnd(CDC* pDC)
+{
+	// TODO: Add your message handler code here and/or call default
+	return TRUE;
+	//return CView::OnEraseBkgnd(pDC);
+}
+void CKolokvijumII2020View::OnInitialUpdate() // NAPOMENA: Zameni "CTvojProjekatView" sa pravim imenom tvoje View klase!
+{
+	CView::OnInitialUpdate(); // Obavezno prvo zovemo originalnu funkciju
+
+	// Naš kod za OpenGL
+	CDC* pDC = GetDC();
+	m_glRenderer.PrepareScene(pDC);
+	ReleaseDC(pDC);
+}
+
+
+
+
+
+
+
+
+
+#####   MATERIJALI  #####
+
+// --- 1. PODESAVANJE MATERIJALA ---
+// Ambijentalna komponenta: 20% boje na juznom polu
+float amb[] = { (R1 / 255.0f) * 0.2f, (G1 / 255.0f) * 0.2f, (B1 / 255.0f) * 0.2f, 1.0f };
+glMaterialfv(GL_FRONT, GL_AMBIENT, amb);
+
+//zadatak je konkretno trazio da se ambijetalna komponenta uradi kao 20% vrednosti R1G1B1 //boje koja je data zadatkom ali ovo je sintaksa, slicno za lighting.
+
+// Spekularna komponenta: bela   BOJA REFLEKSIJE JE BELA, tako je pisalo u zadatku |
+float spec[] = { 1.0f, 1.0f, 1.0f, 1.0f };					   |	
+glMaterialfv(GL_FRONT, GL_SPECULAR, spec);				       <---|
+glMaterialf(GL_FRONT, GL_SHININESS, 64.0f);
+glMaterialfv(GL_FRONT, GL_DIFFUSE, neki niz);   MOZE I OVO
+
+// Palimo ColorMaterial da bi glColor uticao na Diffuse
+glEnable(GL_COLOR_MATERIAL);
+glColorMaterial(GL_FRONT, GL_DIFFUSE);
+
+
+
+
+
